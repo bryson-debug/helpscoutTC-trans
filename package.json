@@ -1,0 +1,13 @@
+{
+  "name": "helpscout-thrivecart-transactions",
+  "version": "1.0.0",
+  "private": true,
+  "description": "HelpScout Dynamic Sidebar App showing ThriveCart transaction history (read-only).",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "test:mock": "node scripts/dev-mock.js"
+  },
+  "license": "UNLICENSED"
+}
