@@ -52,9 +52,8 @@ The response is raw **`text/html`**, not a JSON envelope. A `{"html":
 sidebar as a raw "Pretty-print" JSON debug viewer instead of actual content
 -- a strong signal HelpScout didn't recognize that shape as valid content
 for this protocol. `api/helpscout-sidebar.js` now responds with
-`Content-Type: text/html` and the HTML directly. **Not yet re-confirmed
-against a live request after this change** -- verify the sidebar renders
-actual content (not another JSON dump) after the next deploy.
+`Content-Type: text/html` and the HTML directly -- confirmed working live,
+the sidebar renders real content correctly.
 
 - `api/helpscout-sidebar.js` — the Dynamic Content app's registered
   callback endpoint.
@@ -125,8 +124,15 @@ and corrected once a real conversation exercised the endpoint:
   Two non-obvious things this got wrong before seeing real data: `purchases`
   and `subscriptions` are top-level siblings of `customer`, not nested
   inside it; and **ThriveCart's customer object has no id field at all** —
-  existence is checked via `customer.email`, and the "View in ThriveCart"
-  link is built from email instead of a customer ID. `amount` is in cents.
+  existence is checked via `customer.email`. `amount` is in cents.
+- **Response format**: raw `text/html`, not a JSON envelope — a `{"html":
+  "..."}` response rendered in the sidebar as a raw JSON debug viewer
+  instead of actual content.
+- **"View in ThriveCart" profile link**: confirmed live —
+  `https://thrivecart.com/{accountSlug}/#/orders/view/{base64(email)}/live/overview`.
+  Since ThriveCart's API returns no customer ID, the URL's id segment turned
+  out to just be the customer's email, base64-encoded. `THRIVECART_ACCOUNT_SLUG`
+  is your account's dashboard slug (e.g. `thatmusicteacher`).
 
 ## Remaining open assumptions (confirm before go-live)
 
@@ -150,12 +156,7 @@ and corrected once a real conversation exercised the endpoint:
    expose an explicit "primary" flag in every API version; `getCustomerEmail`
    in `lib/helpscoutApi.js` currently takes the first email on the customer
    record. Verify against a real customer that has multiple emails on file.
-4. **Profile link URL is still a guess**
-   (`https://thrivecart.com/customers?search={email}`, since there's no
-   customer ID to link by). Confirm the real "View in ThriveCart" profile/
-   search URL pattern in your account and update
-   `THRIVECART_CUSTOMER_URL_TEMPLATE`.
-5. **Rate limits.** ThriveCart's API is rate-limited to 60 requests/minute
+4. **Rate limits.** ThriveCart's API is rate-limited to 60 requests/minute
    per account (confirmed). The 60-second cache TTL should give ample
    headroom for a small support team, but revisit if usage grows.
 
