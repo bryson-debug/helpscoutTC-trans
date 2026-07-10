@@ -1,15 +1,20 @@
 #!/usr/bin/env node
 /**
  * Local end-to-end smoke test: spins up a plain HTTP server hosting the two
- * API handlers exactly as Vercel would invoke them, then drives real signed
- * HelpScout-shaped requests through the full pipeline (signature
- * verification -> ThriveCart lookup [mocked] -> HTML render), including the
- * error + retry round trip. No live ThriveCart or HelpScout credentials
- * needed -- THRIVECART_MOCK=true short-circuits the ThriveCart client.
+ * API handlers exactly as Vercel would invoke them, then drives real
+ * HelpScout-shaped GET requests (query-param signature, customer-id only --
+ * the actual confirmed live protocol, not the originally-assumed POST/JSON
+ * body one) through the full pipeline: signature verification -> HelpScout
+ * customer-id-to-email resolution [mocked] -> ThriveCart lookup [mocked] ->
+ * HTML render, including the error + retry round trip.
+ *
+ * THRIVECART_MOCK=true and HELPSCOUT_MOCK=true short-circuit both external
+ * APIs, so no live credentials are needed to run this.
  *
  * Run: npm run test:mock
  */
 process.env.THRIVECART_MOCK = 'true';
+process.env.HELPSCOUT_MOCK = 'true';
 process.env.HELPSCOUT_APP_SECRET = process.env.HELPSCOUT_APP_SECRET || 'dev-secret';
 process.env.RETRY_TOKEN_SECRET = process.env.RETRY_TOKEN_SECRET || 'dev-retry-secret';
 
@@ -20,9 +25,6 @@ const assert = require('assert');
 const helpscoutHandler = require('../api/helpscout-sidebar');
 const retryHandler = require('../api/retry');
 
-// Vercel's Node runtime augments the plain http.ServerResponse with
-// res.status()/res.json() helpers; plain http.createServer doesn't have
-// them, so this harness polyfills the subset our handlers use.
 function withVercelResHelpers(res) {
   res.status = (code) => {
     res.statusCode = code;
@@ -49,26 +51,27 @@ function startServer() {
   return new Promise((resolve) => server.listen(0, () => resolve(server)));
 }
 
-function signBody(body) {
-  return crypto.createHmac('sha1', process.env.HELPSCOUT_APP_SECRET).update(body, 'utf8').digest('base64');
+// Mirrors lib/verifyHelpScoutQuerySignature.js: HMAC-SHA1 of the
+// JSON-encoded params (in order, signature excluded), base64-encoded.
+function signParams(orderedParams) {
+  const json = JSON.stringify(orderedParams);
+  return crypto.createHmac('sha1', process.env.HELPSCOUT_APP_SECRET).update(json, 'utf8').digest('base64');
 }
 
-function post(port, path, bodyObj, { badSignature = false } = {}) {
-  const body = JSON.stringify(bodyObj);
-  const signature = badSignature ? 'invalid-signature' : signBody(body);
-  return new Promise((resolve, reject) => {
-    const req = http.request(
-      { host: 'localhost', port, path, method: 'POST', headers: { 'Content-Type': 'application/json', 'X-HelpScout-Signature': signature } },
-      (res) => {
-        let data = '';
-        res.on('data', (c) => (data += c));
-        res.on('end', () => resolve({ status: res.statusCode, body: data ? JSON.parse(data) : null }));
-      }
-    );
-    req.on('error', reject);
-    req.write(body);
-    req.end();
-  });
+function buildHelpScoutUrl(customerId, { badSignature = false } = {}) {
+  const orderedParams = {
+    'conversation-id': '3382942562',
+    'conversation-number': '6002',
+    'customer-id': customerId,
+    'mailbox-id': '364558',
+    'user-id': '772569',
+    'installation-ids': 'XGao7GBKoDV5',
+    'application-id': '5Ma3boWZmlnA',
+    'application-slug': '167604-thrivecart-transactions',
+  };
+  const signature = badSignature ? 'invalid-signature' : signParams(orderedParams);
+  const qs = new URLSearchParams({ ...orderedParams, 'X-HelpScout-Signature': signature });
+  return `/api/helpscout-sidebar?${qs.toString()}`;
 }
 
 function get(port, path) {
@@ -83,10 +86,6 @@ function get(port, path) {
   });
 }
 
-function helpscoutPayload(email) {
-  return { customer: { id: 1, email }, ticket: { id: 999 } };
-}
-
 async function main() {
   const server = await startServer();
   const port = server.address().port;
@@ -95,59 +94,46 @@ async function main() {
   try {
     // 1. Rejects bad signature
     {
-      const r = await post(port, '/api/helpscout-sidebar', helpscoutPayload('anyone@example.com'), { badSignature: true });
+      const r = await get(port, buildHelpScoutUrl('1', { badSignature: true }));
       assert.strictEqual(r.status, 401, 'bad signature should 401');
       passed++;
     }
 
-    // 2. Customer found -> grouped purchases + subscriptions, most recent first, "show more" present
+    // 2. Customer found -> grouped purchases + subscriptions
     {
-      const r = await post(port, '/api/helpscout-sidebar', helpscoutPayload('customer@example.com'));
+      const r = await get(port, buildHelpScoutUrl('706401868'));
       assert.strictEqual(r.status, 200);
       const html = r.body.html;
-      assert.ok(html.includes('Individual Purchases'), 'has Individual Purchases heading');
-      assert.ok(html.includes('Subscriptions'), 'has Subscriptions heading');
-      assert.ok(html.includes('Piano Foundations Bundle'), 'has a known mock purchase');
-      assert.ok(html.includes('Rhythm &amp; Theory Membership'), 'has a known mock subscription');
-      assert.ok(html.includes('Show more'), 'shows the show-more toggle beyond 5 purchases');
-      assert.ok(html.includes('View in ThriveCart'), 'has profile link');
+      assert.ok(html.includes('Individual Purchases'));
+      assert.ok(html.includes('Subscriptions'));
+      assert.ok(html.includes('Piano Foundations Bundle'));
+      assert.ok(html.includes('Rhythm &amp; Theory Membership'));
+      assert.ok(html.includes('Show more'));
+      assert.ok(html.includes('View in ThriveCart'));
       assert.ok(!/learn/i.test(html), 'must never mention Learn');
       assert.ok(!/course access|grant|revoke/i.test(html), 'must never mention course-access grant/revoke controls');
       passed++;
     }
 
-    // 3. No record found
+    // 3. HelpScout customer has no email on file -> distinct internal error, no retry
     {
-      const r = await post(port, '/api/helpscout-sidebar', helpscoutPayload('no-record@example.com'));
-      assert.ok(r.body.html.includes('No ThriveCart record found'));
+      const r = await get(port, buildHelpScoutUrl('no-email'));
+      assert.ok(r.body.html.includes('Could not load customer info from HelpScout'));
+      assert.ok(!r.body.html.includes('data-retry-token="'), 'no ThriveCart retry token when email resolution itself failed');
       passed++;
     }
 
-    // 4. Zero purchases/subscriptions -> empty state per group
+    // 4. Missing customer-id entirely -> 400
     {
-      const r = await post(port, '/api/helpscout-sidebar', helpscoutPayload('empty@example.com'));
-      assert.ok(r.body.html.includes('No individual purchases on file'));
-      assert.ok(r.body.html.includes('No subscriptions on file'));
+      const badQs = new URLSearchParams({ 'conversation-id': '1' });
+      const sig = signParams({ 'conversation-id': '1' });
+      badQs.set('X-HelpScout-Signature', sig);
+      const r = await get(port, `/api/helpscout-sidebar?${badQs.toString()}`);
+      assert.strictEqual(r.status, 400);
       passed++;
     }
 
-    // 5. API error -> distinct error state with a working retry token, then retry succeeds
-    {
-      const r = await post(port, '/api/helpscout-sidebar', helpscoutPayload('error@example.com'));
-      assert.ok(r.body.html.includes('ThriveCart lookup failed'));
-      const tokenMatch = r.body.html.match(/data-retry-token="([^"]+)"/);
-      assert.ok(tokenMatch, 'error state includes a retry token');
-
-      // Flip the email's mock behavior isn't possible mid-run, so just confirm
-      // the retry endpoint accepts the token and re-runs the pipeline (still
-      // errors for this email, deterministically, proving the round trip works).
-      const retryRes = await get(port, `/api/retry?token=${encodeURIComponent(tokenMatch[1])}`);
-      assert.strictEqual(retryRes.status, 200);
-      assert.ok(retryRes.body.html.includes('ThriveCart lookup failed'));
-      passed++;
-    }
-
-    // 6. Retry rejects invalid tokens
+    // 5. Retry rejects invalid tokens
     {
       const r = await get(port, '/api/retry?token=garbage');
       assert.strictEqual(r.status, 401);

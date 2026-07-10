@@ -1,55 +1,61 @@
-const { readRawBody } = require('../lib/readRawBody');
-const { verifyHelpScoutSignature } = require('../lib/verifyHelpScoutSignature');
-const { parseHelpScoutPayload } = require('../lib/parseHelpScoutPayload');
+const { parseHelpScoutQuery } = require('../lib/parseHelpScoutQuery');
+const { verifyHelpScoutQuerySignature } = require('../lib/verifyHelpScoutQuerySignature');
+const { getCustomerEmail, HelpScoutApiError } = require('../lib/helpscoutApi');
 const { getTransactionsHtml } = require('../lib/getTransactionsHtml');
-const { renderNoRecord } = require('../lib/renderSidebar');
+const { renderError } = require('../lib/renderSidebar');
 
-async function handler(req, res) {
-  // Temporary diagnostic: log exactly what HelpScout sends so we can see
-  // the real method/headers hitting this endpoint from a live conversation.
-  console.log('helpscout-sidebar request:', {
-    method: req.method,
-    headers: req.headers,
-    url: req.url,
-  });
-
-  if (req.method !== 'POST') {
+/**
+ * HelpScout's Dynamic Content callback: a GET request with all context
+ * (conversation-id, customer-id, mailbox-id, user-id, installation-ids,
+ * application-id, application-slug) as query parameters, plus the request's
+ * own signature as an `X-HelpScout-Signature` query parameter -- confirmed
+ * against a live request; see README "Open Assumptions" for the signature
+ * algorithm details, which could not be verified against live docs (403s).
+ *
+ * No email is included in the request, only HelpScout's internal
+ * customer-id, so we resolve that to an email via the HelpScout Mailbox API
+ * before we can look anything up in ThriveCart.
+ */
+module.exports = async (req, res) => {
+  if (req.method !== 'GET') {
+    console.log('helpscout-sidebar: non-GET request', { method: req.method, url: req.url });
     res.status(405).json({ error: 'Method not allowed' });
     return;
   }
 
-  const rawBody = await readRawBody(req);
-  const signature = req.headers['x-helpscout-signature'];
+  const { signature, orderedParams, customerId } = parseHelpScoutQuery(req.url);
   const appSecret = process.env.HELPSCOUT_APP_SECRET;
+  const signatureValid = verifyHelpScoutQuerySignature(orderedParams, signature, appSecret);
 
-  if (!verifyHelpScoutSignature(rawBody, signature, appSecret)) {
+  // Temporary diagnostic: confirms whether our inferred signature algorithm
+  // (HMAC-SHA1 of JSON-encoded ordered params, base64) actually matches what
+  // HelpScout sends -- remove once a live request has verified successfully.
+  console.log('helpscout-sidebar request:', { orderedParams, receivedSignature: signature, signatureValid });
+
+  if (!signatureValid) {
     res.status(401).json({ error: 'Invalid signature' });
     return;
   }
 
-  let body;
+  if (!customerId) {
+    res.status(400).json({ error: 'Missing customer-id' });
+    return;
+  }
+
+  let email;
   try {
-    body = JSON.parse(rawBody);
-  } catch {
-    res.status(400).json({ error: 'Invalid JSON body' });
+    email = await getCustomerEmail(customerId);
+  } catch (err) {
+    if (!(err instanceof HelpScoutApiError)) throw err;
+    res.status(200).json({ html: renderError(null, 'Could not load customer info from HelpScout') });
     return;
   }
 
-  const { primaryEmail } = parseHelpScoutPayload(body);
-
-  if (!primaryEmail) {
-    res.status(200).json({ html: renderNoRecord() });
+  if (!email) {
+    res.status(200).json({ html: renderError(null, 'Could not load customer info from HelpScout') });
     return;
   }
 
-  const html = await getTransactionsHtml(primaryEmail);
+  const html = await getTransactionsHtml(email);
   res.status(200).json({ html });
-}
-
-// Disable Vercel's automatic JSON body parsing so we can verify the
-// signature against the exact raw bytes HelpScout sent. Must be attached
-// to the exported handler itself, not a separate module.exports.config
-// assignment -- otherwise reassigning module.exports afterward wipes it.
-handler.config = { api: { bodyParser: false } };
-
-module.exports = handler;
+};
