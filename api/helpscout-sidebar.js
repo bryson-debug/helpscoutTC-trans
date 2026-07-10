@@ -16,6 +16,17 @@ const { renderError } = require('../lib/renderSidebar');
  * customer-id, so we resolve that to an email via the HelpScout Mailbox API
  * before we can look anything up in ThriveCart.
  */
+// The successful-content response HelpScout renders directly as sidebar
+// HTML must be raw `text/html`, not a JSON envelope -- a JSON response was
+// showing up in the sidebar as a raw "Pretty-print" JSON viewer instead of
+// rendered content, meaning HelpScout didn't recognize {"html": "..."}
+// (the legacy Dynamic App shape) as valid content for this newer protocol.
+function sendHtml(res, html) {
+  res.statusCode = 200;
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  res.end(html);
+}
+
 module.exports = async (req, res) => {
   if (req.method !== 'GET') {
     console.log('helpscout-sidebar: non-GET request', { method: req.method, url: req.url });
@@ -47,15 +58,15 @@ module.exports = async (req, res) => {
     email = await getCustomerEmail(customerId);
   } catch (err) {
     if (!(err instanceof HelpScoutApiError)) throw err;
-    res.status(200).json({ html: renderError(null, 'Could not load customer info from HelpScout') });
+    sendHtml(res, renderError(null, 'Could not load customer info from HelpScout'));
     return;
   }
 
   if (!email) {
-    res.status(200).json({ html: renderError(null, 'Could not load customer info from HelpScout') });
+    sendHtml(res, renderError(null, 'Could not load customer info from HelpScout'));
     return;
   }
 
   const html = await getTransactionsHtml(email);
-  res.status(200).json({ html });
+  sendHtml(res, html);
 };

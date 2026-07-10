@@ -74,13 +74,24 @@ function buildHelpScoutUrl(customerId, { badSignature = false } = {}) {
   return `/api/helpscout-sidebar?${qs.toString()}`;
 }
 
+// Returns both the raw text body and a best-effort JSON parse -- the main
+// endpoint now returns raw HTML (text/html), while /api/retry still returns
+// JSON ({html}), since only HelpScout itself needs the raw-HTML format.
 function get(port, path) {
   return new Promise((resolve, reject) => {
     http
       .get({ host: 'localhost', port, path }, (res) => {
         let data = '';
         res.on('data', (c) => (data += c));
-        res.on('end', () => resolve({ status: res.statusCode, body: data ? JSON.parse(data) : null }));
+        res.on('end', () => {
+          let json = null;
+          try {
+            json = data ? JSON.parse(data) : null;
+          } catch {
+            // not JSON -- that's expected for the main endpoint's HTML responses
+          }
+          resolve({ status: res.statusCode, text: data, body: json });
+        });
       })
       .on('error', reject);
   });
@@ -99,11 +110,11 @@ async function main() {
       passed++;
     }
 
-    // 2. Customer found -> grouped purchases + subscriptions
+    // 2. Customer found -> grouped purchases + subscriptions, served as raw HTML
     {
       const r = await get(port, buildHelpScoutUrl('706401868'));
       assert.strictEqual(r.status, 200);
-      const html = r.body.html;
+      const html = r.text;
       assert.ok(html.includes('Individual Purchases'));
       assert.ok(html.includes('Subscriptions'));
       assert.ok(html.includes('Piano Foundations Bundle'));
@@ -118,8 +129,8 @@ async function main() {
     // 3. HelpScout customer has no email on file -> distinct internal error, no retry
     {
       const r = await get(port, buildHelpScoutUrl('no-email'));
-      assert.ok(r.body.html.includes('Could not load customer info from HelpScout'));
-      assert.ok(!r.body.html.includes('data-retry-token="'), 'no ThriveCart retry token when email resolution itself failed');
+      assert.ok(r.text.includes('Could not load customer info from HelpScout'));
+      assert.ok(!r.text.includes('data-retry-token="'), 'no ThriveCart retry token when email resolution itself failed');
       passed++;
     }
 

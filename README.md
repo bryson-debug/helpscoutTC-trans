@@ -47,6 +47,15 @@ included** -- only HelpScout's internal `customer-id` -- so this app makes
 one additional read-only call to HelpScout's own Mailbox API to resolve
 that ID to an email before it can look anything up in ThriveCart.
 
+The response is raw **`text/html`**, not a JSON envelope. A `{"html":
+"..."}` JSON response (the legacy Dynamic App shape) rendered in the
+sidebar as a raw "Pretty-print" JSON debug viewer instead of actual content
+-- a strong signal HelpScout didn't recognize that shape as valid content
+for this protocol. `api/helpscout-sidebar.js` now responds with
+`Content-Type: text/html` and the HTML directly. **Not yet re-confirmed
+against a live request after this change** -- verify the sidebar renders
+actual content (not another JSON dump) after the next deploy.
+
 - `api/helpscout-sidebar.js` — the Dynamic Content app's registered
   callback endpoint.
 - `api/retry.js` — same-origin-to-us but cross-origin-to-HelpScout endpoint
