@@ -94,38 +94,66 @@ Per the original spec's testing plan (§10), once live credentials are
 available, repeat this using **Bryson's own email** as the test customer
 before rolling out to Bri and Noemi.
 
-## Open assumptions (confirm before go-live)
+## Confirmed against live requests during setup
 
-1. **Signature algorithm.** developer.helpscout.com returned 403s
-   (bot-protection) for every direct fetch attempt during this build, so the
-   exact canonicalization couldn't be read verbatim from the source. Based on
-   corroborating search-engine excerpts of HelpScout's own signature
-   validation guide and SDK source, the implemented algorithm is:
-   `base64(HMAC-SHA1(secret, JSON.stringify(orderedParamsExcludingSignature)))`,
-   with params kept in their original query-string order. **This is the one
-   thing most likely to still be wrong** — if requests still 401 in a live
-   conversation, check the temporary diagnostic log in
-   `api/helpscout-sidebar.js` (logs the received signature and our computed
-   comparison) and adjust `lib/verifyHelpScoutQuerySignature.js` /
-   `lib/parseHelpScoutQuery.js` accordingly. Remove that logging once a real
-   request verifies successfully.
-2. **Which email is "primary".** HelpScout's customer resource doesn't
+Both of these were guessed initially (docs sites 403'd every fetch attempt)
+and corrected once a real conversation exercised the endpoint:
+
+- **HelpScout signature algorithm**: `base64(HMAC-SHA1(secret,
+  JSON.stringify(orderedParamsExcludingSignature)))`, params kept in their
+  original query-string order — verified working (`signatureValid: true`
+  against a live request).
+- **ThriveCart customer lookup**: `POST /customer` with `{ "email": ... }`
+  as a JSON body (a GET with a query string returns 501). Response shape:
+  ```json
+  {
+    "customer": { "name", "email", "ip_address", "address", "custom_fields" },
+    "purchases": [ { "status", "date", "item_name", "amount", "currency", "refunds", ... } ],
+    "subscriptions": [...],
+    "lifetime_value": { "USD": ... }
+  }
+  ```
+  Two non-obvious things this got wrong before seeing real data: `purchases`
+  and `subscriptions` are top-level siblings of `customer`, not nested
+  inside it; and **ThriveCart's customer object has no id field at all** —
+  existence is checked via `customer.email`, and the "View in ThriveCart"
+  link is built from email instead of a customer ID. `amount` is in cents.
+
+## Remaining open assumptions (confirm before go-live)
+
+1. **"Customer not found" behavior is unverified.** The test customer used
+   during setup always had a ThriveCart record, so the exact response
+   ThriveCart returns for an email with no record at all (a `customer` key
+   that's absent/null? an `error` key? per ThriveCart's own docs, "if an
+   error key exists, it will contain details of the error") hasn't been
+   observed live. `getCustomerTransactions` currently treats a missing/no-
+   email `customer` object as "no record," and any `error` key as a hard
+   failure (renders the error+Retry state). Test with an email you're sure
+   has never purchased anything and confirm it shows "No ThriveCart record
+   found," not the error state.
+2. **Subscription field names are unconfirmed.** The live test customer had
+   an empty `subscriptions` array, so `normalizeTransaction()`'s handling of
+   subscriptions (assumed to mirror purchases' field names, plus a guessed
+   active/cancelled/paused/past_due/trial status vocabulary) has never been
+   exercised against a real subscription object. Test with a customer who
+   has an active subscription and adjust if the fields don't match.
+3. **Which email is "primary".** HelpScout's customer resource doesn't
    expose an explicit "primary" flag in every API version; `getCustomerEmail`
    in `lib/helpscoutApi.js` currently takes the first email on the customer
    record. Verify against a real customer that has multiple emails on file.
-3. **ThriveCart field names.** ThriveCart's REST reference
-   (apidocs.thrivecart.com) was also unreachable during this build. The PHP
-   SDK confirms a single `customer(['email' => ...])` call returns purchases
-   and subscriptions together; `lib/thrivecart.js` defensively checks several
-   plausible field-name variants for product name, amount, and status
-   (including refund/dispute) — verify against a real API response and
-   tighten `normalizeTransaction()` accordingly.
-4. **Profile link URL.** `THRIVECART_CUSTOMER_URL_TEMPLATE` is a guess
-   (`https://thrivecart.com/customer/{customerId}`). Confirm the real
-   "View in ThriveCart" profile URL pattern in your account.
+4. **Profile link URL is still a guess**
+   (`https://thrivecart.com/customers?search={email}`, since there's no
+   customer ID to link by). Confirm the real "View in ThriveCart" profile/
+   search URL pattern in your account and update
+   `THRIVECART_CUSTOMER_URL_TEMPLATE`.
 5. **Rate limits.** ThriveCart's API is rate-limited to 60 requests/minute
    per account (confirmed). The 60-second cache TTL should give ample
    headroom for a small support team, but revisit if usage grows.
+
+Two temporary diagnostic `console.log` calls are still in the code
+(`api/helpscout-sidebar.js` for the signature comparison,
+`lib/getTransactionsHtml.js` for ThriveCart error details) — safe to remove
+once you've run live with real customers for a few days without surprises.
 
 ## Explicitly out of scope
 
