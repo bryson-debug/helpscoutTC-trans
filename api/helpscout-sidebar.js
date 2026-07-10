@@ -4,11 +4,15 @@ const { parseHelpScoutPayload } = require('../lib/parseHelpScoutPayload');
 const { getTransactionsHtml } = require('../lib/getTransactionsHtml');
 const { renderNoRecord } = require('../lib/renderSidebar');
 
-// Disable Vercel's automatic JSON body parsing so we can verify the
-// signature against the exact raw bytes HelpScout sent.
-module.exports.config = { api: { bodyParser: false } };
+async function handler(req, res) {
+  // Temporary diagnostic: log exactly what HelpScout sends so we can see
+  // the real method/headers hitting this endpoint from a live conversation.
+  console.log('helpscout-sidebar request:', {
+    method: req.method,
+    headers: req.headers,
+    url: req.url,
+  });
 
-module.exports = async (req, res) => {
   if (req.method !== 'POST') {
     res.status(405).json({ error: 'Method not allowed' });
     return;
@@ -40,4 +44,12 @@ module.exports = async (req, res) => {
 
   const html = await getTransactionsHtml(primaryEmail);
   res.status(200).json({ html });
-};
+}
+
+// Disable Vercel's automatic JSON body parsing so we can verify the
+// signature against the exact raw bytes HelpScout sent. Must be attached
+// to the exported handler itself, not a separate module.exports.config
+// assignment -- otherwise reassigning module.exports afterward wipes it.
+handler.config = { api: { bodyParser: false } };
+
+module.exports = handler;
