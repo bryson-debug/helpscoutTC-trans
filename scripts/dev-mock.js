@@ -120,7 +120,7 @@ async function main() {
       assert.ok(html.includes('Piano Foundations Bundle'));
       assert.ok(html.includes('Rhythm &amp; Theory Membership'));
       assert.ok(html.includes('Show more'));
-      assert.ok(html.includes('View in ThriveCart'));
+      assert.ok(html.includes('>Transactions<'), 'has the Transactions link button');
       // A plain link out to ThriveCart Learn is in scope; actual Learn
       // features (course-access lists, grant/revoke controls) are not.
       assert.ok(html.includes('>Learn<'), 'has the Learn link button');

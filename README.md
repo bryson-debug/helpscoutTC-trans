@@ -27,9 +27,9 @@ email only):
   pattern, with subscription-specific statuses (active/cancelled/paused/
   past due/trial) instead of purchase statuses (paid/refunded/disputed/
   failed).
-- A **"View in ThriveCart"** link to the customer's transactions profile,
-  and a **"Learn"** link to their pre-filled ThriveCart Learn student
-  search (see "Explicitly out of scope" below for why it's search, not a
+- A **"Transactions"** link to the customer's ThriveCart transactions
+  profile, and a **"Learn"** link to their pre-filled ThriveCart Learn
+  student search (see "Explicitly out of scope" below for why it's search, not a
   direct one-click profile link).
 
 States handled: no ThriveCart record found, zero purchases/subscriptions on
@@ -137,7 +137,7 @@ and corrected once a real conversation exercised the endpoint:
 - **Response format**: raw `text/html`, not a JSON envelope — a `{"html":
   "..."}` response rendered in the sidebar as a raw JSON debug viewer
   instead of actual content.
-- **"View in ThriveCart" profile link**: confirmed live —
+- **"Transactions" profile link**: confirmed live —
   `https://thrivecart.com/{accountSlug}/#/orders/view/{base64(email)}/live/overview`.
   Since ThriveCart's API returns no customer ID, the URL's id segment turned
   out to just be the customer's email, base64-encoded. `THRIVECART_ACCOUNT_SLUG`
