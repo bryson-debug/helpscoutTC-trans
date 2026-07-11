@@ -3,8 +3,11 @@
 A HelpScout Dynamic Sidebar App that shows a customer's ThriveCart purchase
 and subscription history inside a HelpScout conversation. This build is
 **scoped to Transactions only**, per explicit instruction: it does not
-include ThriveCart Learn, course access, or any grant/revoke functionality.
-It is entirely read-only — no writes to ThriveCart, no audit logging.
+include ThriveCart Learn course-access data or any grant/revoke
+functionality. It is entirely read-only — no writes to ThriveCart, no audit
+logging. The one exception is a plain "Learn" link button (added later,
+still in scope for a read-only tool) that opens ThriveCart Learn's student
+search for that customer — it makes no API calls and shows no Learn data.
 
 Based on `ThriveCartHelpScoutSidebarSpec.md`, but with the "Learn" section
 (§3.4 Section B, §4.3 automation caveat, §6 edit permissions, §7 audit
@@ -24,7 +27,10 @@ email only):
   pattern, with subscription-specific statuses (active/cancelled/paused/
   past due/trial) instead of purchase statuses (paid/refunded/disputed/
   failed).
-- A **"View in ThriveCart"** link to the customer's transactions profile.
+- A **"View in ThriveCart"** link to the customer's transactions profile,
+  and a **"Learn"** link to their pre-filled ThriveCart Learn student
+  search (see "Explicitly out of scope" below for why it's search, not a
+  direct one-click profile link).
 
 States handled: no ThriveCart record found, zero purchases/subscriptions on
 file (per group), and API error with a working **Retry** button.
@@ -177,8 +183,21 @@ once you've run live with real customers for a few days without surprises.
 
 ## Explicitly out of scope
 
-Per instruction, this build includes **no** ThriveCart Learn functionality:
-no course-access list, no grant/revoke controls, no automation warnings, no
-"View in ThriveCart Learn" link, and no audit logging (which the original
-spec ties only to Learn writes). If Learn support is wanted later, it should
-be a second, separate section added on top of this one.
+Per instruction, this build includes **no** ThriveCart Learn course-access
+functionality: no course-access list, no grant/revoke controls, no
+automation warnings, and no audit logging (which the original spec ties
+only to Learn writes). The one Learn-related addition is the plain "Learn"
+link button, added later as a small, explicitly-scoped exception — it's
+just a navigation link, makes no ThriveCart Learn API calls, and shows no
+course-access data.
+
+That link goes to a pre-filled **student search**, not a direct one-click
+profile, because ThriveCart Learn has no safe read-only "find student by
+email" endpoint -- its `/students` API endpoint is for *enrolling* a
+student (email + course_id → signin URL), a write action with side effects
+(it can trigger a signin/welcome email), so it was deliberately not called
+just to build a link. If a genuine read-only Learn lookup endpoint turns up
+later, this could become a direct link instead.
+
+If full Learn support (course-access display, grant/revoke) is wanted
+later, it should be a second, separate section added on top of this one.
