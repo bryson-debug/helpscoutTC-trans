@@ -15,8 +15,11 @@ logging) removed from scope.
 For the customer on the active HelpScout conversation (matched by primary
 email only):
 
+- **Lifetime Value** — total spend across all currencies the customer has
+  purchased in, pulled directly from ThriveCart's `lifetime_value` field.
 - **Individual Purchases** — one-time purchases, most recent first, last 5
-  shown with a "Show more" toggle for the rest.
+  shown with a "Show more" toggle for the rest. Each section heading is
+  also a collapse/expand toggle.
 - **Subscriptions** — recurring subscriptions, same last-5-plus-toggle
   pattern, with subscription-specific statuses (active/cancelled/paused/
   past due/trial) instead of purchase statuses (paid/refunded/disputed/
@@ -152,11 +155,18 @@ and corrected once a real conversation exercised the endpoint:
    active/cancelled/paused/past_due/trial status vocabulary) has never been
    exercised against a real subscription object. Test with a customer who
    has an active subscription and adjust if the fields don't match.
-3. **Which email is "primary".** HelpScout's customer resource doesn't
+3. **Lifetime Value units are unconfirmed.** ThriveCart's `lifetime_value`
+   field is assumed to be in cents like every other amount field, but the
+   only live example seen so far was `{"USD": 0}` (a customer whose
+   purchases were fully refunded) -- a zero value can't confirm the /100
+   scaling. Check a customer with a nonzero lifetime value and adjust
+   `normalizeLifetimeValue()` in `lib/thrivecart.js` if the displayed number
+   looks off by 100x.
+4. **Which email is "primary".** HelpScout's customer resource doesn't
    expose an explicit "primary" flag in every API version; `getCustomerEmail`
    in `lib/helpscoutApi.js` currently takes the first email on the customer
    record. Verify against a real customer that has multiple emails on file.
-4. **Rate limits.** ThriveCart's API is rate-limited to 60 requests/minute
+5. **Rate limits.** ThriveCart's API is rate-limited to 60 requests/minute
    per account (confirmed). The 60-second cache TTL should give ample
    headroom for a small support team, but revisit if usage grows.
 
