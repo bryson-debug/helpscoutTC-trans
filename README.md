@@ -7,7 +7,7 @@ include ThriveCart Learn course-access data or any grant/revoke
 functionality. It is entirely read-only — no writes to ThriveCart, no audit
 logging. The one exception is a plain "Learn" link button (added later,
 still in scope for a read-only tool) that opens ThriveCart Learn's student
-search for that customer — it makes no API calls and shows no Learn data.
+search screen — it makes no API calls and shows no Learn data.
 
 Based on `ThriveCartHelpScoutSidebarSpec.md`, but with the "Learn" section
 (§3.4 Section B, §4.3 automation caveat, §6 edit permissions, §7 audit
@@ -30,9 +30,9 @@ email only):
   past due/trial) instead of purchase statuses (paid/refunded/disputed/
   failed).
 - A **"Transactions"** link to the customer's ThriveCart transactions
-  profile, and a **"Learn"** link to their pre-filled ThriveCart Learn
-  student search (see "Explicitly out of scope" below for why it's search, not a
-  direct one-click profile link).
+  profile, and a **"Learn"** link to the ThriveCart Learn student search
+  screen (see "Explicitly out of scope" below for why it's a plain link,
+  not pre-filled or a direct one-click profile link).
 
 States handled: no ThriveCart record found, zero purchases/subscriptions on
 file (per group), and API error with a working **Retry** button.
@@ -191,13 +191,18 @@ link button, added later as a small, explicitly-scoped exception — it's
 just a navigation link, makes no ThriveCart Learn API calls, and shows no
 course-access data.
 
-That link goes to a pre-filled **student search**, not a direct one-click
-profile, because ThriveCart Learn has no safe read-only "find student by
-email" endpoint -- its `/students` API endpoint is for *enrolling* a
-student (email + course_id → signin URL), a write action with side effects
-(it can trigger a signin/welcome email), so it was deliberately not called
-just to build a link. If a genuine read-only Learn lookup endpoint turns up
-later, this could become a direct link instead.
+That link goes to the plain **student search screen**, with no email
+pre-filled and no direct one-click profile -- confirmed against ThriveCart's
+own official API reference that the only student-related endpoint is
+"Create new student" (a write/enrollment action requiring email + course_id,
+with side effects like a signin/welcome email), so there's no safe
+read-only way to resolve an email to a student ID or build a direct link.
+A `?search={email}` pre-filled version was also tried, but ThriveCart's own
+Learn search applied it inconsistently on live testing (worked once, then
+failed identically via link-click and reload, with no reliable fix
+available from our side) -- so the agent enters the email themselves
+instead. If ThriveCart ever adds a genuine read-only Learn lookup endpoint,
+this could become a reliable direct link.
 
 If full Learn support (course-access display, grant/revoke) is wanted
 later, it should be a second, separate section added on top of this one.
