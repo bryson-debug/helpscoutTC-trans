@@ -147,16 +147,11 @@ and corrected once a real conversation exercised the endpoint:
 
 ## Remaining open assumptions (confirm before go-live)
 
-1. **"Customer not found" behavior is unverified.** The test customer used
-   during setup always had a ThriveCart record, so the exact response
-   ThriveCart returns for an email with no record at all (a `customer` key
-   that's absent/null? an `error` key? per ThriveCart's own docs, "if an
-   error key exists, it will contain details of the error") hasn't been
-   observed live. `getCustomerTransactions` currently treats a missing/no-
-   email `customer` object as "no record," and any `error` key as a hard
-   failure (renders the error+Retry state). Test with an email you're sure
-   has never purchased anything and confirm it shows "No ThriveCart record
-   found," not the error state.
+1. **~~"Customer not found" behavior~~ -- confirmed live.** ThriveCart
+   returns a plain HTTP 404 for an email with no record at all (not a 200
+   with an error key, as guessed). `callThriveCart` now treats 404
+   specifically as "no record" (returns `null`) rather than throwing; any
+   other non-2xx status still throws and renders the error+Retry state.
 2. **Subscription field names are unconfirmed.** The live test customer had
    an empty `subscriptions` array, so `normalizeTransaction()`'s handling of
    subscriptions (assumed to mirror purchases' field names, plus a guessed
