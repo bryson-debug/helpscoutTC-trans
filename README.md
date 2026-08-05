@@ -80,6 +80,17 @@ the sidebar renders real content correctly.
 - `lib/cache.js` — 60s best-effort in-memory TTL cache keyed by email.
 - `lib/renderSidebar.js` — builds the sidebar HTML (styles, rows, toggles).
 - `lib/retryToken.js` — signs/verifies the short-lived Retry token.
+- `lib/fetchWithTimeout.js` — 8s timeout on every external call (ThriveCart,
+  HelpScout OAuth token, HelpScout Mailbox API). A live bug report showed a
+  raw Vercel "504: FUNCTION_INVOCATION_TIMEOUT" page bleeding into the
+  sidebar -- one of those calls hung with no timeout, blocking until
+  Vercel's own function-duration limit force-killed the invocation. Now a
+  hung call fails fast and renders the normal error+Retry state instead.
+  `vercel.json`'s `maxDuration` was also raised from 10s to 30s so there's
+  headroom for the sequential worst case (HelpScout OAuth token on a cold
+  cache + HelpScout customer + ThriveCart customer, up to ~24s) to resolve
+  via our own timeout logic rather than the platform's harder, less
+  informative kill switch.
 
 ## Setup
 
